@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 
 const checks = [
@@ -31,10 +31,13 @@ function App() {
   const [previewUrl, setPreviewUrl] = useState('')
   const [resumeText, setResumeText] = useState('')
   const [readError, setReadError] = useState('')
+  const [isAnalysing, setIsAnalysing] = useState(false)
+  const [analysisComplete, setAnalysisComplete] = useState(false)
   const [jobDescriptionFile, setJobDescriptionFile] = useState(null)
   const [jobDescriptionText, setJobDescriptionText] = useState('')
   const [jobDescriptionError, setJobDescriptionError] = useState('')
   const [builderInput, setBuilderInput] = useState('')
+  const [isBuilderThinking, setIsBuilderThinking] = useState(false)
   const [builderMessages, setBuilderMessages] = useState([
     {
       role: 'assistant',
@@ -42,18 +45,22 @@ function App() {
     },
   ])
   const [chatInput, setChatInput] = useState('')
+  const [isResumeChatThinking, setIsResumeChatThinking] = useState(false)
   const [chatMessages, setChatMessages] = useState([
     {
       role: 'assistant',
       text: 'Upload a resume, then ask me what to improve, how to rewrite a section, or how ready it looks for ATS screening.',
     },
   ])
+  const resultsRef = useRef(null)
 
   useEffect(() => {
     if (!file) {
       setPreviewUrl('')
       setResumeText('')
       setReadError('')
+      setIsAnalysing(false)
+      setAnalysisComplete(false)
       return undefined
     }
 
@@ -74,13 +81,39 @@ function App() {
     return () => URL.revokeObjectURL(objectUrl)
   }, [file])
 
-  const analysis = useMemo(() => analyseResume(resumeText), [resumeText])
   const jobAnalysis = useMemo(
     () => analyseJobDescription(jobDescriptionText),
     [jobDescriptionText],
   )
+  const analysis = useMemo(
+    () => analyseResume(resumeText, jobAnalysis),
+    [resumeText, jobAnalysis],
+  )
   const score = file ? analysis.score : 0
   const suggestions = file ? analysis.suggestions : defaultSuggestions
+
+  useEffect(() => {
+    if (!file) {
+      return undefined
+    }
+
+    if (isTextLikeFile(file) && !resumeText.trim() && !readError) {
+      return undefined
+    }
+
+    setIsAnalysing(true)
+    setAnalysisComplete(false)
+
+    const timer = window.setTimeout(() => {
+      setIsAnalysing(false)
+      setAnalysisComplete(true)
+      window.setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 80)
+    }, 1400)
+
+    return () => window.clearTimeout(timer)
+  }, [file, resumeText, readError, jobAnalysis.source])
 
   if (currentView === 'home') {
     return (
@@ -204,7 +237,7 @@ function App() {
 
               <form
                 className="chat-form"
-                onSubmit={(event) => {
+                onSubmit={async (event) => {
                   event.preventDefault()
                   const prompt = builderInput.trim()
 
@@ -212,15 +245,35 @@ function App() {
                     return
                   }
 
+                  setBuilderInput('')
+                  setIsBuilderThinking(true)
                   setBuilderMessages((messages) => [
                     ...messages,
                     { role: 'user', text: prompt },
-                    {
-                      role: 'assistant',
-                      text: createBuilderResponse(prompt, jobAnalysis),
-                    },
                   ])
-                  setBuilderInput('')
+
+                  try {
+                    const answer = await callAiChat({
+                      mode: 'builder',
+                      question: prompt,
+                      jobDescription: jobAnalysis.source,
+                      jobKeywords: jobAnalysis.keywords,
+                    })
+                    setBuilderMessages((messages) => [
+                      ...messages,
+                      { role: 'assistant', text: answer },
+                    ])
+                  } catch {
+                    setBuilderMessages((messages) => [
+                      ...messages,
+                      {
+                        role: 'assistant',
+                        text: createBuilderResponse(prompt, jobAnalysis),
+                      },
+                    ])
+                  } finally {
+                    setIsBuilderThinking(false)
+                  }
                 }}
               >
                 <input
@@ -233,7 +286,9 @@ function App() {
                   }
                   onChange={(event) => setBuilderInput(event.target.value)}
                 />
-                <button type="submit">Ask</button>
+                <button type="submit" disabled={isBuilderThinking}>
+                  {isBuilderThinking ? 'Thinking' : 'Ask'}
+                </button>
               </form>
             </section>
           </div>
@@ -282,12 +337,63 @@ function App() {
           <p className="eyebrow">Resume analysis</p>
           <h1 id="page-title">Check your resume before you apply.</h1>
           <p className="hero-text">
-            Upload a resume to preview it, review likely ATS issues, and spot
-            sections that need clearer wording or stronger proof.
+            Add the employer job description if you have one, then upload your
+            resume. ResAi compares both when a description is provided and shows
+            ATS, keyword, and wording results.
           </p>
         </div>
 
         <div className="upload-panel">
+          <section className="job-target-card" aria-label="Employer job description">
+            <span className="panel-label">Step 1</span>
+            <h2>Provide job description <small>Optional</small></h2>
+            <textarea
+              value={jobDescriptionText}
+              placeholder="Paste the employer's job description here if you want role-specific comparison."
+              onChange={(event) => {
+                setJobDescriptionText(event.target.value)
+                setJobDescriptionError('')
+                setAnalysisComplete(false)
+              }}
+            />
+            <label className="mini-upload">
+              <input
+                type="file"
+                accept=".txt,.md"
+                onChange={(event) => {
+                  const selectedFile = event.target.files?.[0]
+                  setJobDescriptionFile(selectedFile || null)
+                  setJobDescriptionError('')
+
+                  if (!selectedFile) {
+                    return
+                  }
+
+                  const reader = new FileReader()
+                  reader.onload = () => setJobDescriptionText(String(reader.result || ''))
+                  reader.onerror = () => {
+                    setJobDescriptionError('Could not read this job description file.')
+                  }
+                  reader.readAsText(selectedFile)
+                }}
+              />
+              Upload TXT/MD job description
+            </label>
+            {jobDescriptionError && (
+              <p className="job-error">{jobDescriptionError}</p>
+            )}
+            {jobAnalysis.keywords.length > 0 && (
+              <div className="job-insights compact-insights">
+                <span>Target keywords</span>
+                <div>
+                  {jobAnalysis.keywords.slice(0, 6).map((keyword) => (
+                    <mark key={keyword}>{keyword}</mark>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
           <label className="upload-box">
             <input
               type="file"
@@ -295,6 +401,7 @@ function App() {
               onChange={(event) => {
                 const selectedFile = event.target.files?.[0]
                 setFile(selectedFile || null)
+                setAnalysisComplete(false)
                 setChatMessages([
                   {
                     role: 'assistant',
@@ -316,7 +423,20 @@ function App() {
         </div>
       </section>
 
-      <section className="dashboard" aria-label="Resume analysis preview">
+      {isAnalysing && (
+        <section className="analysing-panel" aria-live="polite">
+          <div className="spinner" aria-hidden="true"></div>
+          <h2>Analysing your resume</h2>
+          <p>
+            {jobAnalysis.source
+              ? 'Comparing your resume with the employer job description and checking keywords, structure, wording, and ATS readiness.'
+              : 'Checking your resume structure, wording, measurable impact, and ATS readiness.'}
+          </p>
+        </section>
+      )}
+
+      {analysisComplete && (
+      <section className="dashboard" ref={resultsRef} aria-label="Resume analysis preview">
         <div className="score-panel">
           <span className="panel-label">ATS score</span>
           <strong>{score}%</strong>
@@ -348,8 +468,9 @@ function App() {
           </ul>
         </div>
       </section>
+      )}
 
-      {file && (
+      {file && analysisComplete && (
         <section className="preview-section" aria-label="Resume preview">
           <div className="preview-header">
             <div>
@@ -419,7 +540,7 @@ function App() {
 
             <form
               className="chat-form"
-              onSubmit={(event) => {
+              onSubmit={async (event) => {
                 event.preventDefault()
                 const question = chatInput.trim()
 
@@ -427,13 +548,36 @@ function App() {
                   return
                 }
 
-                const answer = createChatResponse(question, analysis, file, resumeText)
+                setChatInput('')
+                setIsResumeChatThinking(true)
                 setChatMessages((messages) => [
                   ...messages,
                   { role: 'user', text: question },
-                  { role: 'assistant', text: answer },
                 ])
-                setChatInput('')
+
+                try {
+                  const answer = await callAiChat({
+                    mode: 'analyser',
+                    question,
+                    resumeText,
+                    analysis,
+                    jobDescription: jobAnalysis.source,
+                    jobKeywords: jobAnalysis.keywords,
+                    fileName: file?.name,
+                  })
+                  setChatMessages((messages) => [
+                    ...messages,
+                    { role: 'assistant', text: answer },
+                  ])
+                } catch {
+                  const answer = createChatResponse(question, analysis, file, resumeText)
+                  setChatMessages((messages) => [
+                    ...messages,
+                    { role: 'assistant', text: answer },
+                  ])
+                } finally {
+                  setIsResumeChatThinking(false)
+                }
               }}
             >
               <input
@@ -442,7 +586,9 @@ function App() {
                 placeholder="Ask: What should I improve first?"
                 onChange={(event) => setChatInput(event.target.value)}
               />
-              <button type="submit">Send</button>
+              <button type="submit" disabled={isResumeChatThinking}>
+                {isResumeChatThinking ? 'Thinking' : 'Send'}
+              </button>
             </form>
           </section>
         </section>
@@ -509,14 +655,25 @@ function highlightResumeText(text, issues) {
   })
 }
 
-function analyseResume(text) {
+function analyseResume(text, jobAnalysis) {
+  const hasJobDescription = Boolean(jobAnalysis.source.trim())
+
   if (!text.trim()) {
     return {
       score: 72,
-      summary: 'The file is uploaded. Use PDF/TXT text extraction next for deeper analysis.',
+      summary: hasJobDescription
+        ? 'The resume is uploaded for review against the provided job description.'
+        : 'The resume is uploaded and ready for a high-level review.',
       conclusion:
-        'This resume has been uploaded successfully, but the current browser-only analyser cannot read all document text from this file type. For a deeper conclusion with exact highlights, upload a TXT/MD version or add a PDF text parser in the next development step.',
-      suggestions: defaultSuggestions,
+        hasJobDescription
+          ? 'Overall, this resume should be strengthened around the employer role by making the most relevant skills, projects, and achievements easier to identify. The resume should clearly show how the candidate matches the job description through aligned keywords, concise bullet points, and measurable outcomes.'
+          : 'Overall, this resume appears ready for an initial review, but it should still be checked for clear section headings, measurable achievements, role-specific keywords, and concise bullet points. The strongest next improvement is to make every experience or project point show what was done, which skill was used, and what result was achieved.',
+      suggestions: hasJobDescription
+        ? [
+            `Reflect these job-description keywords where truthful: ${jobAnalysis.keywords.slice(0, 6).join(', ') || 'role skills and tools'}.`,
+            ...defaultSuggestions,
+          ]
+        : defaultSuggestions,
       issues: [
         {
           title: 'Text extraction pending',
@@ -530,6 +687,14 @@ function analyseResume(text) {
 
   const lines = text.split(/\r?\n/)
   const issues = []
+  const normalizedResume = text.toLowerCase()
+  const targetKeywords = jobAnalysis.keywords || []
+  const matchedKeywords = targetKeywords.filter((keyword) =>
+    normalizedResume.includes(keyword.toLowerCase()),
+  )
+  const missingKeywords = targetKeywords.filter(
+    (keyword) => !normalizedResume.includes(keyword.toLowerCase()),
+  )
 
   lines.forEach((line, index) => {
     weakPhraseRules.forEach((rule) => {
@@ -570,19 +735,49 @@ function analyseResume(text) {
     })
   }
 
-  const score = Math.max(45, 92 - issues.length * 7)
+  if (missingKeywords.length > 0) {
+    issues.push({
+      title: 'Job keyword gap',
+      detail: `The resume does not clearly include these job-description keywords: ${missingKeywords.slice(0, 5).join(', ')}.`,
+      severity: 'high',
+    })
+  }
+
+  const keywordMatch = targetKeywords.length
+    ? Math.round((matchedKeywords.length / targetKeywords.length) * 100)
+    : null
+  const score = Math.max(
+    38,
+    Math.min(96, 92 - issues.length * 6 + Math.round((keywordMatch || 0) / 8)),
+  )
 
   return {
     score,
     summary:
       issues.length > 0
-        ? `${issues.length} improvement area${issues.length === 1 ? '' : 's'} found in the resume text.`
-        : 'Strong first pass. The resume text is clear and easy to scan.',
+        ? keywordMatch === null
+          ? `${issues.length} improvement area${issues.length === 1 ? '' : 's'} found in the resume.`
+          : `${issues.length} improvement area${issues.length === 1 ? '' : 's'} found. Keyword match with the job description is ${keywordMatch}%.`
+        : keywordMatch === null
+          ? 'Strong first pass. The resume is clear and easy to scan.'
+          : `Strong first pass. The resume is clear and matches ${keywordMatch}% of the detected job-description keywords.`,
     conclusion:
       issues.length > 0
-        ? `Overall, this resume is a workable draft with a score of ${score}%, but it needs sharper wording, stronger measurable outcomes, and cleaner ATS-friendly sections before it is ready for serious applications. Fix the high-priority items first, then compare the final version against a target job description for keyword fit.`
-        : `Overall, this resume looks strong with a score of ${score}%. It is easy to scan and does not show obvious text-level problems in this first pass, so the next best step is matching it against a real job description for missing role-specific keywords.`,
-    suggestions: issues.length > 0 ? issues.map((issue) => issue.detail) : defaultSuggestions,
+        ? keywordMatch === null
+          ? `Overall, this resume is a workable draft with a score of ${score}%. It needs sharper wording, stronger measurable outcomes, and cleaner ATS-friendly sections. Improve the highlighted parts first so the resume reads as specific, confident, and results-driven.`
+          : `Overall, this resume is a workable draft with a score of ${score}%. Compared with the employer's job description, it needs stronger alignment with the missing role keywords, sharper wording, and more measurable achievements. Improve the highlighted parts first so the resume reads as specific, confident, and clearly matched to the role.`
+        : keywordMatch === null
+          ? `Overall, this resume looks strong with a score of ${score}%. It is easy to scan, uses clear wording, and does not show obvious text-level problems in this review. The resume should still stay concise and focused, but it is in good shape for refinement.`
+          : `Overall, this resume looks strong with a score of ${score}%. It is easy to scan, uses clear wording, and aligns well with the employer's job description. The resume should still stay concise, but it is in good shape for final role-specific refinement.`,
+    suggestions:
+      issues.length > 0
+        ? issues.map((issue) => issue.detail)
+        : [
+            keywordMatch === null
+              ? 'Keep the strongest role-relevant skills visible in the summary, skills, and experience sections.'
+              : `Keep the strongest matched keywords visible: ${matchedKeywords.slice(0, 5).join(', ') || 'role skills and tools'}.`,
+            ...defaultSuggestions,
+          ],
     issues,
   }
 }
@@ -620,6 +815,24 @@ function createChatResponse(question, analysis, file, resumeText) {
   }
 
   return `${analysis.conclusion} Ask me about ATS score, keywords, rewrite help, or what to improve first for a more focused answer.`
+}
+
+async function callAiChat(payload) {
+  const response = await fetch('/.netlify/functions/resume-chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(data.error || 'AI chat request failed')
+  }
+
+  return data.answer
 }
 
 function createBuilderResponse(prompt, jobAnalysis) {
