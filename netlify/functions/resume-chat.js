@@ -35,7 +35,7 @@ exports.handler = async (event) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: process.env.HUGGING_FACE_MODEL || 'mistralai/Mistral-7B-Instruct-v0.3',
+        model: process.env.HUGGING_FACE_MODEL || 'HuggingFaceH4/zephyr-7b-beta',
         messages,
         max_tokens: 450,
         temperature: 0.35,
@@ -46,7 +46,11 @@ exports.handler = async (event) => {
 
     if (!response.ok) {
       return jsonResponse(response.status, {
-        error: data.error?.message || 'OpenAI request failed.',
+        error:
+          data.error?.message ||
+          data.message ||
+          data.error ||
+          `Hugging Face request failed with status ${response.status}.`,
       })
     }
 
