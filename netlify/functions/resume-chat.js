@@ -5,11 +5,16 @@ exports.handler = async (event) => {
     return jsonResponse(405, { error: 'Method not allowed' })
   }
 
-  const apiKey = process.env.HUGGING_FACE_API_KEY || process.env.HF_TOKEN
+  const apiKey =
+    process.env.HUGGING_FACE_API_KEY ||
+    process.env.HUGGINGFACE_API_KEY ||
+    process.env.HUGGING_FACE_TOKEN ||
+    process.env.HF_TOKEN
 
   if (!apiKey) {
     return jsonResponse(500, {
-      error: 'Missing HUGGING_FACE_API_KEY environment variable.',
+      error:
+        'Missing Hugging Face API key. Add HUGGING_FACE_API_KEY in Netlify Environment variables, then redeploy the site.',
     })
   }
 
