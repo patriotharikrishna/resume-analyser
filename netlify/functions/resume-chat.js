@@ -45,12 +45,21 @@ exports.handler = async (event) => {
     const data = await response.json()
 
     if (!response.ok) {
+      const rawError =
+        data.error?.message ||
+        data.message ||
+        data.error ||
+        `Hugging Face request failed with status ${response.status}.`
+
+      if (response.status === 401 || /invalid username|password|unauthorized|token/i.test(rawError)) {
+        return jsonResponse(401, {
+          error:
+            'Hugging Face authentication failed. In Netlify, set HUGGING_FACE_API_KEY to a valid Hugging Face access token that starts with hf_, then clear cache and redeploy.',
+        })
+      }
+
       return jsonResponse(response.status, {
-        error:
-          data.error?.message ||
-          data.message ||
-          data.error ||
-          `Hugging Face request failed with status ${response.status}.`,
+        error: rawError,
       })
     }
 
