@@ -154,7 +154,7 @@ function App() {
                   <span className="panel-label">Job-targeted builder</span>
                   <h2>Create a resume with AI</h2>
                 </div>
-                <span className="chat-status">Draft helper</span>
+                <span className="chat-status">Hugging Face AI</span>
               </div>
 
               <label className="job-upload-box">
@@ -263,12 +263,14 @@ function App() {
                       ...messages,
                       { role: 'assistant', text: answer },
                     ])
-                  } catch {
+                  } catch (error) {
                     setBuilderMessages((messages) => [
                       ...messages,
                       {
                         role: 'assistant',
-                        text: createBuilderResponse(prompt, jobAnalysis),
+                        text:
+                          error.message ||
+                          'The Hugging Face chatbot is not available right now. Please check your Netlify environment variables and try again.',
                       },
                     ])
                   } finally {
@@ -527,7 +529,7 @@ function App() {
                 <span className="panel-label">AI resume chat</span>
                 <h2>Discuss this resume</h2>
               </div>
-              <span className="chat-status">Local assistant</span>
+              <span className="chat-status">Hugging Face AI</span>
             </div>
 
             <div className="chat-window">
@@ -569,11 +571,15 @@ function App() {
                     ...messages,
                     { role: 'assistant', text: answer },
                   ])
-                } catch {
-                  const answer = createChatResponse(question, analysis, file, resumeText)
+                } catch (error) {
                   setChatMessages((messages) => [
                     ...messages,
-                    { role: 'assistant', text: answer },
+                    {
+                      role: 'assistant',
+                      text:
+                        error.message ||
+                        'The Hugging Face chatbot is not available right now. Please check your Netlify environment variables and try again.',
+                    },
                   ])
                 } finally {
                   setIsResumeChatThinking(false)
@@ -782,41 +788,6 @@ function analyseResume(text, jobAnalysis) {
   }
 }
 
-function createChatResponse(question, analysis, file, resumeText) {
-  if (!file) {
-    return 'Upload a resume first, then I can discuss its score, weak sections, keywords, and suggested rewrites.'
-  }
-
-  const normalizedQuestion = question.toLowerCase()
-  const topIssue = analysis.issues[0]
-
-  if (normalizedQuestion.includes('score') || normalizedQuestion.includes('ats')) {
-    return `The current ATS-style score is ${analysis.score}%. ${analysis.summary} The fastest way to improve it is to fix the highest priority issue: ${topIssue?.detail || 'compare your resume with a target job description for missing keywords.'}`
-  }
-
-  if (normalizedQuestion.includes('first') || normalizedQuestion.includes('priority')) {
-    return topIssue
-      ? `Start with "${topIssue.title}". ${topIssue.detail} This gives you the best improvement for the least editing effort.`
-      : 'Start by checking the resume against a specific job description. The current text does not show obvious structural problems.'
-  }
-
-  if (normalizedQuestion.includes('keyword') || normalizedQuestion.includes('job')) {
-    return 'For keyword matching, paste the target job description into the app in a future version. For now, make sure your Skills and Experience sections repeat important role terms naturally, such as tools, frameworks, certifications, and responsibilities from the posting.'
-  }
-
-  if (normalizedQuestion.includes('rewrite') || normalizedQuestion.includes('change')) {
-    return topIssue
-      ? `A good rewrite pattern is: action verb + technical skill + measurable result. For example, replace weak phrasing with something like "Improved dashboard load time by 32% by optimizing API calls and caching repeated requests."`
-      : 'Use strong bullet points with this structure: action verb + what you built or improved + measurable result.'
-  }
-
-  if (!resumeText.trim()) {
-    return 'I can discuss the uploaded file at a high level, but exact line-by-line coaching needs extractable text. Upload TXT/MD or add PDF/DOCX parsing to make the chat more specific.'
-  }
-
-  return `${analysis.conclusion} Ask me about ATS score, keywords, rewrite help, or what to improve first for a more focused answer.`
-}
-
 async function callAiChat(payload) {
   const response = await fetch('/.netlify/functions/resume-chat', {
     method: 'POST',
@@ -833,45 +804,6 @@ async function callAiChat(payload) {
   }
 
   return data.answer
-}
-
-function createBuilderResponse(prompt, jobAnalysis) {
-  const normalizedPrompt = prompt.toLowerCase()
-  const hasJobDescription = jobAnalysis.source.trim().length > 0
-  const pastedJobDescription =
-    normalizedPrompt.includes('responsibilities') ||
-    normalizedPrompt.includes('requirements') ||
-    normalizedPrompt.includes('qualifications')
-
-  if (!hasJobDescription && !pastedJobDescription) {
-    return 'Before creating the resume, upload or paste the employer job description. I need the role requirements first so the resume can match the right keywords, responsibilities, and skill expectations.'
-  }
-
-  const keywordAdvice = jobAnalysis.keywords.length
-    ? `I will target these keywords: ${jobAnalysis.keywords.join(', ')}. `
-    : 'I will target the employer requirements you shared. '
-
-  if (normalizedPrompt.includes('summary') || normalizedPrompt.includes('profile')) {
-    return `${keywordAdvice}Try this summary format: "Motivated [role] with experience in [top matching skills], focused on solving [employer problem]. Strong in [tool/technology], with projects that show [measurable impact]." Share your exact background and I can make it specific.`
-  }
-
-  if (normalizedPrompt.includes('project')) {
-    return `${keywordAdvice}For each project, use this structure: project name, tech stack, employer-relevant problem solved, your contribution, and result. Example bullet: "Built a React dashboard that reduced manual tracking time by 40% using reusable components and filtered views."`
-  }
-
-  if (normalizedPrompt.includes('skill')) {
-    return `${keywordAdvice}Create a Skills section that mirrors the job language. Group it into Languages, Frontend, Backend, Databases, Tools, and Soft Skills, but include only skills you can honestly discuss.`
-  }
-
-  if (normalizedPrompt.includes('fresher') || normalizedPrompt.includes('student')) {
-    return `${keywordAdvice}For a fresher resume, lead with Education, Skills, Projects, Internships or Training, Certifications, and Achievements. Your projects should echo the job description, so each bullet should show what you built and why it matters for this employer.`
-  }
-
-  if (normalizedPrompt.includes('experience') || normalizedPrompt.includes('work')) {
-    return `${keywordAdvice}Write experience bullets with this pattern: action verb + job-relevant task + tool/skill + measurable result. Avoid "responsible for" and use words like built, improved, automated, designed, analysed, or led.`
-  }
-
-  return `${keywordAdvice}Now send your target role, education, top 6 skills, 2 projects, and any internship or work experience. I will convert that into a job-targeted professional summary and resume bullet points.`
 }
 
 function analyseJobDescription(text) {

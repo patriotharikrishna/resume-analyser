@@ -1,31 +1,39 @@
-const OPENAI_API_URL = 'https://api.openai.com/v1/responses'
+const HUGGING_FACE_CHAT_URL = 'https://router.huggingface.co/v1/chat/completions'
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return jsonResponse(405, { error: 'Method not allowed' })
   }
 
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = process.env.HUGGING_FACE_API_KEY || process.env.HF_TOKEN
 
   if (!apiKey) {
     return jsonResponse(500, {
-      error: 'Missing OPENAI_API_KEY environment variable.',
+      error: 'Missing HUGGING_FACE_API_KEY environment variable.',
     })
   }
 
   try {
     const payload = JSON.parse(event.body || '{}')
-    const prompt = buildPrompt(payload)
+    const topicResponse = getOutOfScopeResponse(payload)
 
-    const response = await fetch(OPENAI_API_URL, {
+    if (topicResponse) {
+      return jsonResponse(200, { answer: topicResponse })
+    }
+
+    const messages = buildMessages(payload)
+
+    const response = await fetch(HUGGING_FACE_CHAT_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
-        input: prompt,
+        model: process.env.HUGGING_FACE_MODEL || 'mistralai/Mistral-7B-Instruct-v0.3',
+        messages,
+        max_tokens: 450,
+        temperature: 0.35,
       }),
     })
 
@@ -47,7 +55,7 @@ exports.handler = async (event) => {
   }
 }
 
-function buildPrompt(payload) {
+function buildMessages(payload) {
   const mode = payload.mode === 'builder' ? 'builder' : 'analyser'
   const question = limitText(payload.question || '', 1200)
   const jobDescription = limitText(payload.jobDescription || '', 3000)
@@ -57,72 +65,109 @@ function buildPrompt(payload) {
     : ''
 
   if (mode === 'builder') {
-    return `
-You are ResAi, an AI resume creation assistant.
-Before creating resume content, require an employer job description. If no job description is available, ask the user to upload or paste it first.
-When a job description is available, help create a targeted resume using only the user's truthful background.
-Keep the response concise, practical, and resume-ready.
-
-Job description:
-${jobDescription || 'Not provided'}
-
-Detected job keywords:
-${jobKeywords || 'None detected'}
-
-User message:
-${question}
-`
+    return [
+      {
+        role: 'system',
+        content:
+          'You are ResAi, an AI resume creation assistant. Only answer questions about resumes, job descriptions, job applications, ATS readiness, interview/job preparation, skills, projects, and career profile writing. If the user asks about anything unrelated, politely ask them to come back to resumes or jobs. Before creating resume content, require an employer job description. When a job description is available, help create targeted resume content using only the user\'s truthful background. Keep responses concise, practical, and resume-ready.',
+      },
+      {
+        role: 'user',
+        content: `Job description:\n${jobDescription || 'Not provided'}\n\nDetected job keywords:\n${jobKeywords || 'None detected'}\n\nUser message:\n${question}`,
+      },
+    ]
   }
 
   const analysis = payload.analysis || {}
 
-  return `
-You are ResAi, an AI resume analysis assistant.
-Discuss only the user's resume and how to improve it. If an employer job description is provided, compare the resume with it.
-Give specific, concise advice. Do not mention implementation details, browser parsing, code, APIs, or internal analysis limitations.
-
-Uploaded file:
-${payload.fileName || 'Resume'}
-
-ATS-style score:
-${analysis.score || 'Not available'}
-
-Analysis summary:
-${analysis.summary || 'No summary available'}
-
-Current conclusion:
-${analysis.conclusion || 'No conclusion available'}
-
-Detected job keywords:
-${jobKeywords || 'None provided'}
-
-Employer job description:
-${jobDescription || 'Not provided'}
-
-Resume text:
-${resumeText || 'Text not available'}
-
-User question:
-${question}
-`
+  return [
+    {
+      role: 'system',
+      content:
+        'You are ResAi, an AI resume analysis assistant. Only answer questions about the uploaded resume, job descriptions, ATS readiness, keywords, resume rewriting, job applications, skills, projects, and career profile improvement. If the user asks about anything unrelated, politely ask them to come back to the resume or job topic. Discuss only the user\'s resume and how to improve it. If an employer job description is provided, compare the resume with it. Give specific, concise advice. Do not mention implementation details, code, APIs, or internal limitations.',
+    },
+    {
+      role: 'user',
+      content: `Uploaded file:\n${payload.fileName || 'Resume'}\n\nATS-style score:\n${analysis.score || 'Not available'}\n\nAnalysis summary:\n${analysis.summary || 'No summary available'}\n\nCurrent conclusion:\n${analysis.conclusion || 'No conclusion available'}\n\nDetected job keywords:\n${jobKeywords || 'None provided'}\n\nEmployer job description:\n${jobDescription || 'Not provided'}\n\nResume text:\n${resumeText || 'Text not available'}\n\nUser question:\n${question}`,
+    },
+  ]
 }
 
 function extractOutputText(data) {
-  if (data.output_text) {
-    return data.output_text
+  return (
+    data.choices?.[0]?.message?.content?.trim()
+    || 'I could not generate a response right now.'
+  )
+}
+
+function getOutOfScopeResponse(payload) {
+  const question = String(payload.question || '').toLowerCase()
+  const mode = payload.mode === 'builder' ? 'builder' : 'analyser'
+  const hasContext = Boolean(payload.jobDescription || payload.resumeText || payload.analysis)
+
+  if (!question.trim()) {
+    return 'Please ask a resume or job-related question.'
   }
 
-  const textParts = []
+  const careerTerms = [
+    'resume',
+    'cv',
+    'job',
+    'role',
+    'ats',
+    'keyword',
+    'skill',
+    'project',
+    'experience',
+    'education',
+    'internship',
+    'summary',
+    'profile',
+    'career',
+    'interview',
+    'application',
+    'employer',
+    'description',
+    'bullet',
+    'achievement',
+    'rewrite',
+    'hire',
+    'recruiter',
+  ]
+  const unrelatedTerms = [
+    'weather',
+    'movie',
+    'song',
+    'recipe',
+    'cricket',
+    'football',
+    'politics',
+    'capital of',
+    'joke',
+    'game',
+    'relationship',
+    'travel',
+    'stock',
+    'crypto',
+  ]
 
-  for (const item of data.output || []) {
-    for (const content of item.content || []) {
-      if (content.type === 'output_text' && content.text) {
-        textParts.push(content.text)
-      }
-    }
+  if (unrelatedTerms.some((term) => question.includes(term))) {
+    return 'I am here to help with resumes, job descriptions, ATS readiness, and job applications. Please ask something related to your resume or target job.'
   }
 
-  return textParts.join('\n').trim() || 'I could not generate a response right now.'
+  if (careerTerms.some((term) => question.includes(term))) {
+    return ''
+  }
+
+  if (mode === 'builder' && hasContext) {
+    return ''
+  }
+
+  if (mode === 'analyser' && hasContext) {
+    return ''
+  }
+
+  return 'I am here to help with resumes, job descriptions, ATS readiness, and job applications. Please come back to the resume or job topic.'
 }
 
 function limitText(text, maxLength) {
