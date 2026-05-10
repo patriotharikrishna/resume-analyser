@@ -10,9 +10,20 @@
   grid-column: 1 / -1;
 }
 
-.top-nav strong {
-  color: #111827;
-  font-size: 18px;
+.brand-mark {
+  align-items: center;
+  display: inline-flex;
+  line-height: 0;
+  text-decoration: none;
+}
+
+.brand-mark img {
+  border-radius: 8px;
+  display: block;
+  height: 58px;
+  object-fit: cover;
+  object-position: center;
+  width: 58px;
 }
 
 .top-nav button,
@@ -756,7 +767,6 @@ h1 {
   color: #e5e7eb;
 }
 
-.top-nav strong,
 h1,
 .feature-section h2,
 .upload-title,

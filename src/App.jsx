@@ -120,7 +120,9 @@ function App() {
       <main className="app-shell">
         <section className="home-hero" aria-labelledby="home-title">
           <nav className="top-nav">
-            <strong>ResAi</strong>
+            <a className="brand-mark" href="/" aria-label="ResAi home">
+              <img src="/resai-logo.jpeg" alt="ResAi" />
+            </a>
             <button type="button" onClick={() => setCurrentView('analyser')}>
               Analyse resume
             </button>
@@ -330,7 +332,9 @@ function App() {
     <main className="app-shell">
       <section className="hero-section" aria-labelledby="page-title">
         <nav className="top-nav analyser-nav">
-          <strong>ResAi</strong>
+          <a className="brand-mark" href="/" aria-label="ResAi home">
+            <img src="/resai-logo.jpeg" alt="ResAi" />
+          </a>
           <button type="button" onClick={() => setCurrentView('home')}>
             Home
           </button>
