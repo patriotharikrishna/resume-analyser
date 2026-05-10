@@ -1,16 +1,73 @@
-# React + Vite
+# ResAi Resume Analyser
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+ResAi is a resume analysis web app that helps users review, improve, and tailor resumes before applying for jobs.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Upload resumes in PDF, DOC, DOCX, TXT, or MD format.
+- Preview uploaded resumes directly in the browser.
+- Check resumes for ATS-friendly structure, weak wording, missing metrics, and missing skills sections.
+- Add an employer job description to compare keywords and role alignment.
+- Chat with an AI assistant about resume improvements.
+- Create targeted resume content from a job description and user background.
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- React
+- JavaScript
+- CSS
+- Netlify Functions
+- Hugging Face API
 
-## Expanding the ESLint configuration
+## Getting Started
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the local development server:
+
+```bash
+npm run dev
+```
+
+Build the project for production:
+
+```bash
+npm run build
+```
+
+Preview the production build:
+
+```bash
+npm run preview
+```
+
+## Environment Variables
+
+The AI chat feature uses a Netlify function. Add the required Hugging Face API key in your Netlify environment settings.
+
+```bash
+HF_TOKEN=your_hugging_face_token
+```
+
+## Project Structure
+
+```text
+src/
+  App.jsx
+  App.css
+  index.css
+netlify/
+  functions/
+    resume-chat.js
+public/
+  favicon.svg
+  icons.svg
+```
+
+## Deployment
+
+This project is configured for Netlify. The `netlify.toml` file controls the build command, publish directory, and serverless function location.
