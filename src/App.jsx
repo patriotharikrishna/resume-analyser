@@ -687,7 +687,7 @@ async function callAiChat(payload) {
     body: JSON.stringify(payload),
   })
 
-  const data = await response.json()
+  const data = await readJsonResponse(response)
 
   if (!response.ok) {
     throw new Error(data.error || 'AI chat request failed')
@@ -712,13 +712,29 @@ async function callResumeAnalysis({ file, jobDescription, jobKeywords }) {
     }),
   })
 
-  const data = await response.json()
+  const data = await readJsonResponse(response)
 
   if (!response.ok) {
     throw new Error(data.error || 'Resume analysis request failed')
   }
 
   return data
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text()
+
+  if (!text) {
+    return {}
+  }
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    return {
+      error: text.slice(0, 180),
+    }
+  }
 }
 
 function readFileAsBase64(file) {

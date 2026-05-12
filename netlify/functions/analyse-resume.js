@@ -1,5 +1,8 @@
 import mammoth from 'mammoth'
-import { PDFParse } from 'pdf-parse'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+const pdfParse = require('pdf-parse')
 
 const HUGGING_FACE_CHAT_URL = 'https://router.huggingface.co/v1/chat/completions'
 
@@ -69,9 +72,7 @@ async function extractResumeText({ buffer, fileName, fileType }) {
   }
 
   if (fileType === 'application/pdf' || name.endsWith('.pdf')) {
-    const parser = new PDFParse({ data: buffer })
-    const parsed = await parser.getText()
-    await parser.destroy()
+    const parsed = await pdfParse(buffer)
     return parsed.text || ''
   }
 
