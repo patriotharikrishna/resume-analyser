@@ -1,6 +1,6 @@
 const HUGGING_FACE_CHAT_URL = 'https://router.huggingface.co/v1/chat/completions'
 
-exports.handler = async (event) => {
+export const handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return jsonResponse(405, { error: 'Method not allowed' })
   }

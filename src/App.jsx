@@ -14,23 +14,14 @@ const defaultSuggestions = [
   'Include role-specific keywords from the job description.',
 ]
 
-const weakPhraseRules = [
-  {
-    pattern: /\b(responsible for|worked on|helped with|hardworking|team player)\b/gi,
-    reason: 'Replace weak wording with direct action verbs and measurable impact.',
-  },
-  {
-    pattern: /\b(objective|career objective)\b/gi,
-    reason: 'Use a concise professional summary instead of an old-style objective.',
-  },
-]
-
 function App() {
   const [currentView, setCurrentView] = useState('home')
   const [file, setFile] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [resumeText, setResumeText] = useState('')
   const [readError, setReadError] = useState('')
+  const [analysis, setAnalysis] = useState(createEmptyAnalysis())
+  const [analysisError, setAnalysisError] = useState('')
   const [isAnalysing, setIsAnalysing] = useState(false)
   const [analysisComplete, setAnalysisComplete] = useState(false)
   const [jobDescriptionFile, setJobDescriptionFile] = useState(null)
@@ -59,6 +50,8 @@ function App() {
       setPreviewUrl('')
       setResumeText('')
       setReadError('')
+      setAnalysis(createEmptyAnalysis())
+      setAnalysisError('')
       setIsAnalysing(false)
       setAnalysisComplete(false)
       return undefined
@@ -68,15 +61,8 @@ function App() {
     setPreviewUrl(objectUrl)
     setResumeText('')
     setReadError('')
-
-    if (isTextLikeFile(file)) {
-      const reader = new FileReader()
-      reader.onload = () => setResumeText(String(reader.result || ''))
-      reader.onerror = () => {
-        setReadError('Could not read this file for text highlighting.')
-      }
-      reader.readAsText(file)
-    }
+    setAnalysis(createEmptyAnalysis())
+    setAnalysisError('')
 
     return () => URL.revokeObjectURL(objectUrl)
   }, [file])
@@ -84,10 +70,6 @@ function App() {
   const jobAnalysis = useMemo(
     () => analyseJobDescription(jobDescriptionText),
     [jobDescriptionText],
-  )
-  const analysis = useMemo(
-    () => analyseResume(resumeText, jobAnalysis),
-    [resumeText, jobAnalysis],
   )
   const score = file ? analysis.score : 0
   const suggestions = file ? analysis.suggestions : defaultSuggestions
@@ -97,23 +79,46 @@ function App() {
       return undefined
     }
 
-    if (isTextLikeFile(file) && !resumeText.trim() && !readError) {
-      return undefined
-    }
-
+    let cancelled = false
     setIsAnalysing(true)
     setAnalysisComplete(false)
+    setAnalysisError('')
 
-    const timer = window.setTimeout(() => {
-      setIsAnalysing(false)
-      setAnalysisComplete(true)
-      window.setTimeout(() => {
-        resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }, 80)
-    }, 1400)
+    callResumeAnalysis({
+      file,
+      jobDescription: jobAnalysis.source,
+      jobKeywords: jobAnalysis.keywords,
+    })
+      .then((result) => {
+        if (cancelled) {
+          return
+        }
 
-    return () => window.clearTimeout(timer)
-  }, [file, resumeText, readError, jobAnalysis.source])
+        setResumeText(result.extractedText || '')
+        setAnalysis(result.analysis || createEmptyAnalysis())
+        setAnalysisComplete(true)
+        window.setTimeout(() => {
+          resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 80)
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return
+        }
+
+        setAnalysisError(error.message || 'Could not analyse this resume.')
+        setReadError(error.message || 'Could not extract readable text from this file.')
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsAnalysing(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [file, jobAnalysis.source, jobAnalysis.keywords])
 
   if (currentView === 'home') {
     return (
@@ -359,6 +364,7 @@ function App() {
               onChange={(event) => {
                 setJobDescriptionText(event.target.value)
                 setJobDescriptionError('')
+                setAnalysisError('')
                 setAnalysisComplete(false)
               }}
             />
@@ -438,6 +444,13 @@ function App() {
               ? 'Comparing your resume with the employer job description and checking keywords, structure, wording, and ATS readiness.'
               : 'Checking your resume structure, wording, measurable impact, and ATS readiness.'}
           </p>
+        </section>
+      )}
+
+      {analysisError && (
+        <section className="analysing-panel error-panel" aria-live="polite">
+          <h2>Could not analyse this resume</h2>
+          <p>{analysisError}</p>
         </section>
       )}
 
@@ -665,133 +678,6 @@ function highlightResumeText(text, issues) {
   })
 }
 
-function analyseResume(text, jobAnalysis) {
-  const hasJobDescription = Boolean(jobAnalysis.source.trim())
-
-  if (!text.trim()) {
-    return {
-      score: 72,
-      summary: hasJobDescription
-        ? 'The resume is uploaded for review against the provided job description.'
-        : 'The resume is uploaded and ready for a high-level review.',
-      conclusion:
-        hasJobDescription
-          ? 'Overall, this resume should be strengthened around the employer role by making the most relevant skills, projects, and achievements easier to identify. The resume should clearly show how the candidate matches the job description through aligned keywords, concise bullet points, and measurable outcomes.'
-          : 'Overall, this resume appears ready for an initial review, but it should still be checked for clear section headings, measurable achievements, role-specific keywords, and concise bullet points. The strongest next improvement is to make every experience or project point show what was done, which skill was used, and what result was achieved.',
-      suggestions: hasJobDescription
-        ? [
-            `Reflect these job-description keywords where truthful: ${jobAnalysis.keywords.slice(0, 6).join(', ') || 'role skills and tools'}.`,
-            ...defaultSuggestions,
-          ]
-        : defaultSuggestions,
-      issues: [
-        {
-          title: 'Text extraction pending',
-          detail:
-            'This file type can be previewed, but its text is not being parsed yet.',
-          severity: 'review',
-        },
-      ],
-    }
-  }
-
-  const lines = text.split(/\r?\n/)
-  const issues = []
-  const normalizedResume = text.toLowerCase()
-  const targetKeywords = jobAnalysis.keywords || []
-  const matchedKeywords = targetKeywords.filter((keyword) =>
-    normalizedResume.includes(keyword.toLowerCase()),
-  )
-  const missingKeywords = targetKeywords.filter(
-    (keyword) => !normalizedResume.includes(keyword.toLowerCase()),
-  )
-
-  lines.forEach((line, index) => {
-    weakPhraseRules.forEach((rule) => {
-      if (rule.pattern.test(line)) {
-        issues.push({
-          title: 'Weak wording',
-          detail: rule.reason,
-          severity: 'high',
-          line: index,
-        })
-      }
-      rule.pattern.lastIndex = 0
-    })
-
-    if (line.length > 120) {
-      issues.push({
-        title: 'Long sentence',
-        detail: 'Break this into shorter, easier-to-scan bullet points.',
-        severity: 'review',
-        line: index,
-      })
-    }
-  })
-
-  if (!/\b\d+[%+]?\b/.test(text)) {
-    issues.push({
-      title: 'Missing metrics',
-      detail: 'Add numbers such as percentages, time saved, revenue, users, or accuracy gains.',
-      severity: 'high',
-    })
-  }
-
-  if (!/\b(skills|technical skills)\b/i.test(text)) {
-    issues.push({
-      title: 'Skills section missing',
-      detail: 'Add a dedicated skills section so ATS tools can classify your profile.',
-      severity: 'review',
-    })
-  }
-
-  if (missingKeywords.length > 0) {
-    issues.push({
-      title: 'Job keyword gap',
-      detail: `The resume does not clearly include these job-description keywords: ${missingKeywords.slice(0, 5).join(', ')}.`,
-      severity: 'high',
-    })
-  }
-
-  const keywordMatch = targetKeywords.length
-    ? Math.round((matchedKeywords.length / targetKeywords.length) * 100)
-    : null
-  const score = Math.max(
-    38,
-    Math.min(96, 92 - issues.length * 6 + Math.round((keywordMatch || 0) / 8)),
-  )
-
-  return {
-    score,
-    summary:
-      issues.length > 0
-        ? keywordMatch === null
-          ? `${issues.length} improvement area${issues.length === 1 ? '' : 's'} found in the resume.`
-          : `${issues.length} improvement area${issues.length === 1 ? '' : 's'} found. Keyword match with the job description is ${keywordMatch}%.`
-        : keywordMatch === null
-          ? 'Strong first pass. The resume is clear and easy to scan.'
-          : `Strong first pass. The resume is clear and matches ${keywordMatch}% of the detected job-description keywords.`,
-    conclusion:
-      issues.length > 0
-        ? keywordMatch === null
-          ? `Overall, this resume is a workable draft with a score of ${score}%. It needs sharper wording, stronger measurable outcomes, and cleaner ATS-friendly sections. Improve the highlighted parts first so the resume reads as specific, confident, and results-driven.`
-          : `Overall, this resume is a workable draft with a score of ${score}%. Compared with the employer's job description, it needs stronger alignment with the missing role keywords, sharper wording, and more measurable achievements. Improve the highlighted parts first so the resume reads as specific, confident, and clearly matched to the role.`
-        : keywordMatch === null
-          ? `Overall, this resume looks strong with a score of ${score}%. It is easy to scan, uses clear wording, and does not show obvious text-level problems in this review. The resume should still stay concise and focused, but it is in good shape for refinement.`
-          : `Overall, this resume looks strong with a score of ${score}%. It is easy to scan, uses clear wording, and aligns well with the employer's job description. The resume should still stay concise, but it is in good shape for final role-specific refinement.`,
-    suggestions:
-      issues.length > 0
-        ? issues.map((issue) => issue.detail)
-        : [
-            keywordMatch === null
-              ? 'Keep the strongest role-relevant skills visible in the summary, skills, and experience sections.'
-              : `Keep the strongest matched keywords visible: ${matchedKeywords.slice(0, 5).join(', ') || 'role skills and tools'}.`,
-            ...defaultSuggestions,
-          ],
-    issues,
-  }
-}
-
 async function callAiChat(payload) {
   const response = await fetch('/.netlify/functions/resume-chat', {
     method: 'POST',
@@ -808,6 +694,57 @@ async function callAiChat(payload) {
   }
 
   return data.answer
+}
+
+async function callResumeAnalysis({ file, jobDescription, jobKeywords }) {
+  const fileBase64 = await readFileAsBase64(file)
+  const response = await fetch('/.netlify/functions/analyse-resume', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      fileName: file.name,
+      fileType: file.type,
+      fileBase64,
+      jobDescription,
+      jobKeywords,
+    }),
+  })
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Resume analysis request failed')
+  }
+
+  return data
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onload = () => {
+      const result = String(reader.result || '')
+      resolve(result.includes(',') ? result.split(',').pop() : result)
+    }
+    reader.onerror = () => reject(new Error('Could not read this file.'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function createEmptyAnalysis() {
+  return {
+    score: 0,
+    summary: 'Upload a resume to generate an analysis preview.',
+    conclusion: '',
+    suggestions: defaultSuggestions,
+    issues: [],
+    keywordMatch: null,
+    matchedKeywords: [],
+    missingKeywords: [],
+  }
 }
 
 function analyseJobDescription(text) {

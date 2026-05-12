@@ -420,6 +420,16 @@ h1 {
   max-width: 620px;
 }
 
+.error-panel {
+  background: rgba(254, 242, 242, 0.94);
+  border-color: rgba(220, 38, 38, 0.32);
+}
+
+.error-panel h2,
+.error-panel p {
+  color: #7f1d1d;
+}
+
 .spinner {
   animation: spin 900ms linear infinite;
   border: 4px solid rgba(148, 163, 184, 0.28);
