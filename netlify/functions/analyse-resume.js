@@ -1,8 +1,5 @@
 import mammoth from 'mammoth'
-import { createRequire } from 'node:module'
-
-const require = createRequire(import.meta.url)
-const pdfParse = require('pdf-parse')
+import pdfParse from 'pdf-parse/lib/pdf-parse.js'
 
 const HUGGING_FACE_CHAT_URL = 'https://router.huggingface.co/v1/chat/completions'
 
