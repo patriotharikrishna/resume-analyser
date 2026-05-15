@@ -212,7 +212,7 @@ async function getAiAnalysis({ resumeText, jobDescription, jobKeywords, ruleAnal
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: process.env.HUGGING_FACE_MODEL || 'HuggingFaceH4/zephyr-7b-beta',
+      model: process.env.HUGGING_FACE_MODEL || 'mistralai/Mistral-7B-Instruct-v0.1',
       messages: [
         {
           role: 'system',

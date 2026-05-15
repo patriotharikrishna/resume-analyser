@@ -47,11 +47,33 @@ npm run preview
 
 ## Environment Variables
 
-The AI chat feature uses a Netlify function. Add the required Hugging Face API key in your Netlify environment settings.
+The AI chat feature uses a Netlify function that requires a Hugging Face API token.
 
-```bash
-HF_TOKEN=your_hugging_face_token
-```
+### Setup Instructions:
+
+1. **Get a Hugging Face API Token:**
+   - Go to https://huggingface.co/settings/tokens
+   - Create a new token (or use an existing one)
+   - Copy the token (starts with `hf_`)
+
+2. **Add the token to Netlify:**
+   - Go to your Netlify site dashboard
+   - Navigate to: **Site settings → Build & deploy → Environment**
+   - Click **Add environment variables**
+   - Variable name: `HF_TOKEN`
+   - Variable value: Paste your Hugging Face token
+   - Click **Save**
+
+3. **Redeploy your site:**
+   - Go to **Deployments**
+   - Click **Trigger deploy → Deploy site**
+   - Wait for deployment to complete
+
+### Alternative variable names (any of these work):
+- `HF_TOKEN` (recommended)
+- `HUGGING_FACE_API_KEY`
+- `HUGGINGFACE_API_KEY`
+- `HUGGING_FACE_TOKEN`
 
 ## Project Structure
 

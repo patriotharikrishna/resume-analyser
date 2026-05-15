@@ -14,7 +14,7 @@ export const handler = async (event) => {
   if (!apiKey) {
     return jsonResponse(500, {
       error:
-        'Missing Hugging Face API key. Add HUGGING_FACE_API_KEY in Netlify Environment variables, then redeploy the site.',
+        'Missing Hugging Face API key. To fix: (1) Go to Netlify site settings > Build & deploy > Environment, (2) Add a variable named "HF_TOKEN" with your Hugging Face API token (starts with hf_), (3) Trigger a new deploy. Token from: https://huggingface.co/settings/tokens',
     })
   }
 
@@ -35,10 +35,10 @@ export const handler = async (event) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: process.env.HUGGING_FACE_MODEL || 'HuggingFaceH4/zephyr-7b-beta',
+        model: process.env.HUGGING_FACE_MODEL || 'mistralai/Mistral-7B-Instruct-v0.1',
         messages,
-        max_tokens: 450,
-        temperature: 0.35,
+        max_tokens: 500,
+        temperature: 0.3,
       }),
     })
 
@@ -54,7 +54,7 @@ export const handler = async (event) => {
       if (response.status === 401 || /invalid username|password|unauthorized|token/i.test(rawError)) {
         return jsonResponse(401, {
           error:
-            'Hugging Face authentication failed. In Netlify, set HUGGING_FACE_API_KEY to a valid Hugging Face access token that starts with hf_, then clear cache and redeploy.',
+            'Hugging Face authentication failed. Your API token is invalid or expired. (1) Verify HF_TOKEN in Netlify Environment settings matches a valid token from https://huggingface.co/settings/tokens, (2) Redeploy the site.',
         })
       }
 
