@@ -5,8 +5,8 @@
 .top-nav {
   align-items: center;
   display: flex;
-  justify-content: space-between;
-  gap: 18px;
+  justify-content: flex-start;
+  gap: 24px;
   grid-column: 1 / -1;
 }
 
